@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>출석 체크</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #FDFBF7; margin: 0; padding: 20px; }
+    .card { max-width: 400px; margin: 40px auto; background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); text-align: center; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .lead { color: #666; margin-bottom: 24px; }
+    input { width: 100%; padding: 16px; margin: 8px 0 16px; border: 1.5px solid #E8E0D5; border-radius: 10px; font-size: 16px; box-sizing: border-box; }
+    button { width: 100%; padding: 16px; background: #6B5B4F; color: white; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; }
+    button:disabled { background: #ccc; }
+    .msg { margin-top: 16px; padding: 12px; border-radius: 8px; }
+    .success { background: #F0F7F2; color: #3D6B4F; }
+    .error { background: #FDF2F0; color: #A65D57; }
+    .eyebrow { letter-spacing: 2px; font-size: 12px; color: #888; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="eyebrow">AMOREPACIFIC</div>
+    <h1>출석 체크</h1>
+    <p class="lead">소속 팀과 이름을 입력해 주세요</p>
+    <form id="form">
+      <input type="text" id="team" placeholder="소속 팀 (예: 마케팅팀)" required>
+      <input type="text" id="name" placeholder="이름 (예: 김민수)" required>
+      <button type="submit" id="btn">출석 등록</button>
+    </form>
+    <div id="msg"></div>
+  </div>
+  <script>
+    document.getElementById('form').onsubmit = async (e) => {
+      e.preventDefault();
+      const team = document.getElementById('team').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const btn = document.getElementById('btn');
+      const msg = document.getElementById('msg');
+      btn.disabled = true;
+      btn.textContent = '등록 중...';
+      msg.innerHTML = '';
+      try {
+        const res = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ team, name })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          msg.innerHTML = `<div class="msg success">출석이 완료되었습니다<br><strong>출석 시간: ${data.time}</strong></div>`;
+          document.getElementById('form').reset();
+        } else {
+          msg.innerHTML = `<div class="msg error">${data.error}</div>`;
+        }
+      } catch {
+        msg.innerHTML = `<div class="msg error">네트워크 오류가 발생했습니다</div>`;
+      }
+      btn.disabled = false;
+      btn.textContent = '출석 등록';
+    };
+  </script>
+</body>
+</html>

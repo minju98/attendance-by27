@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>출석 관리</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #FDFBF7; margin: 0; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { text-align: center; }
+    .qr-box { background: white; border-radius: 16px; padding: 30px; text-align: center; margin-bottom: 20px; }
+    #qr { width: 360px; height: 360px; }
+    .controls { margin: 20px 0; }
+    input, button { padding: 10px 16px; margin: 4px; border-radius: 8px; border: 1px solid #ddd; }
+    button { background: #6B5B4F; color: white; border: none; cursor: pointer; }
+    .stats { display: flex; gap: 16px; margin-bottom: 20px; }
+    .stat { flex: 1; background: white; padding: 16px; border-radius: 12px; text-align: center; }
+    table { width: 100%; background: white; border-collapse: collapse; }
+    th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #F5F0E6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>출석 관리</h1>
+    <div class="qr-box">
+      <img id="qr" alt="QR">
+      <p>휴대폰 카메라로 QR코드를 스캔해 주세요</p>
+      <div class="controls">
+        <input id="title" placeholder="행사 제목" value="사내 교육 출석">
+        <input id="expected" type="number" placeholder="예정 인원" value="0" style="width:80px">
+        <button onclick="save()">저장</button>
+        <button onclick="start()">출석 시작</button>
+        <button onclick="end()" style="background:#A65D57">출석 종료</button>
+        <button onclick="exportCSV()">CSV 다운로드</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat">예정<br><strong id="exp">0</strong></div>
+      <div class="stat">출석<br><strong id="pre">0</strong></div>
+      <div class="stat">미출석<br><strong id="abs">0</strong></div>
+      <div class="stat">출석률<br><strong id="rate">0%</strong></div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>소속 팀</th><th>이름</th><th>출석 시간</th><th></th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+  <script>
+    const PIN = prompt('관리자 PIN을 입력하세요', '2026') || '2026';
+    async function load() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      document.getElementById('exp').textContent = data.stats.expected;
+      document.getElementById('pre').textContent = data.stats.present;
+      document.getElementById('abs').textContent = data.stats.absent;
+      document.getElementById('rate').textContent = data.stats.rate + '%';
+      document.getElementById('title').value = data.session.title;
+      document.getElementById('expected').value = data.session.expected_count;
+      document.getElementById('list').innerHTML = data.attendees.map((a, i) => `
+        <tr>
+          <td>${i+1}</td><td>${a.team}</td><td>${a.name}</td>
+          <td>${new Date(a.attended_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}</td>
+          <td><button onclick="del(${a.id})">삭제</button></td>
+        </tr>`).join('');
+    }
+    async function qr() {
+      const res = await fetch('/api/qr');
+      const data = await res.json();
+      document.getElementById('qr').src = data.qr;
+    }
+    async function start() { await act('start'); }
+    async function end() { await act('end'); }
+    async function save() { await act('save'); }
+    async function act(action) {
+      await fetch('/api/session', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          pin: PIN,
+          action,
+          title: document.getElementById('title').value,
+          expected: document.getElementById('expected').value
+        })
+      });
+      load();
+    }
+    async function del(id) {
+      if (!confirm('삭제하시겠습니까?')) return;
+      await fetch(`/api/attendance/${id}`, { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({pin: PIN}) });
+      load();
+    }
+    function exportCSV() {
+      window.location = `/api/export?pin=${PIN}`;
+    }
+    qr();
+    load();
+    setInterval(load, 3000);
+  </script>
+</body>
+</html>
