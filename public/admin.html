@@ -18,7 +18,7 @@
     table { width: 100%; background: white; border-collapse: collapse; }
     th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
     th { background: #F5F0E6; }
-    #msg { color: #A65D57; margin: 10px 0; }
+    #msg { color: #A65D57; margin: 10px 0; min-height: 20px; }
   </style>
 </head>
 <body>
@@ -28,8 +28,8 @@
       <img id="qr" alt="QR">
       <p>휴대폰 카메라로 QR코드를 스캔해 주세요</p>
       <div class="controls">
-        <input id="title" placeholder="행사 제목" value="사내 교육 출석">
-        <input id="expected" type="number" placeholder="예정 인원" value="0" style="width:80px">
+        <input id="title" placeholder="행사 제목">
+        <input id="expected" type="number" placeholder="예정 인원" style="width:80px">
         <button onclick="save()">저장</button>
         <button onclick="start()">출석 시작</button>
         <button onclick="end()" style="background:#A65D57">출석 종료</button>
@@ -50,10 +50,14 @@
   </div>
   <script>
     const PIN = '2026';
+    let initialized = false;
+
     function showMsg(text) {
-      document.getElementById('msg').textContent = text;
-      setTimeout(() => document.getElementById('msg').textContent = '', 3000);
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      setTimeout(() => el.textContent = '', 3000);
     }
+
     async function load() {
       try {
         const res = await fetch('/api/status');
@@ -62,8 +66,14 @@
         document.getElementById('pre').textContent = data.stats.present;
         document.getElementById('abs').textContent = data.stats.absent;
         document.getElementById('rate').textContent = data.stats.rate + '%';
-        document.getElementById('title').value = data.session.title || '사내 교육 출석';
-        document.getElementById('expected').value = data.session.expected_count || 0;
+
+        // 처음 한 번만 입력칸을 채움 (이후에는 사용자가 수정 중일 수 있으므로 덮어쓰지 않음)
+        if (!initialized) {
+          document.getElementById('title').value = data.session.title || '사내 교육 출석';
+          document.getElementById('expected').value = data.session.expected_count || 0;
+          initialized = true;
+        }
+
         document.getElementById('list').innerHTML = data.attendees.map((a, i) => `
           <tr>
             <td>${i+1}</td><td>${a.team}</td><td>${a.name}</td>
@@ -74,6 +84,7 @@
         showMsg('데이터를 불러오지 못했습니다');
       }
     }
+
     async function qr() {
       try {
         const res = await fetch('/api/qr');
@@ -81,9 +92,11 @@
         document.getElementById('qr').src = data.qr;
       } catch {}
     }
+
     async function start() { await act('start'); }
     async function end() { await act('end'); }
     async function save() { await act('save'); }
+
     async function act(action) {
       try {
         const res = await fetch('/api/session', {
@@ -107,14 +120,21 @@
         showMsg('서버와 통신하지 못했습니다');
       }
     }
+
     async function del(id) {
       if (!confirm('삭제하시겠습니까?')) return;
-      await fetch(`/api/attendance/${id}`, { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({pin: PIN}) });
+      await fetch(`/api/attendance/${id}`, {
+        method: 'DELETE',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({pin: PIN})
+      });
       load();
     }
+
     function exportCSV() {
       window.location = `/api/export?pin=${PIN}`;
     }
+
     qr();
     load();
     setInterval(load, 5000);
