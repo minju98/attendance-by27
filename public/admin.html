@@ -13,11 +13,12 @@
     .controls { margin: 20px 0; }
     input, button { padding: 10px 16px; margin: 4px; border-radius: 8px; border: 1px solid #ddd; }
     button { background: #6B5B4F; color: white; border: none; cursor: pointer; }
-    .stats { display: flex; gap: 16px; margin-bottom: 20px; }
-    .stat { flex: 1; background: white; padding: 16px; border-radius: 12px; text-align: center; }
+    .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 120px; background: white; padding: 16px; border-radius: 12px; text-align: center; }
     table { width: 100%; background: white; border-collapse: collapse; }
     th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
     th { background: #F5F0E6; }
+    #msg { color: #A65D57; margin: 10px 0; }
   </style>
 </head>
 <body>
@@ -34,6 +35,7 @@
         <button onclick="end()" style="background:#A65D57">출석 종료</button>
         <button onclick="exportCSV()">CSV 다운로드</button>
       </div>
+      <div id="msg"></div>
     </div>
     <div class="stats">
       <div class="stat">예정<br><strong id="exp">0</strong></div>
@@ -47,43 +49,63 @@
     </table>
   </div>
   <script>
-    const PIN = prompt('관리자 PIN을 입력하세요', '2026') || '2026';
+    const PIN = '2026';
+    function showMsg(text) {
+      document.getElementById('msg').textContent = text;
+      setTimeout(() => document.getElementById('msg').textContent = '', 3000);
+    }
     async function load() {
-      const res = await fetch('/api/status');
-      const data = await res.json();
-      document.getElementById('exp').textContent = data.stats.expected;
-      document.getElementById('pre').textContent = data.stats.present;
-      document.getElementById('abs').textContent = data.stats.absent;
-      document.getElementById('rate').textContent = data.stats.rate + '%';
-      document.getElementById('title').value = data.session.title;
-      document.getElementById('expected').value = data.session.expected_count;
-      document.getElementById('list').innerHTML = data.attendees.map((a, i) => `
-        <tr>
-          <td>${i+1}</td><td>${a.team}</td><td>${a.name}</td>
-          <td>${new Date(a.attended_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}</td>
-          <td><button onclick="del(${a.id})">삭제</button></td>
-        </tr>`).join('');
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('exp').textContent = data.stats.expected;
+        document.getElementById('pre').textContent = data.stats.present;
+        document.getElementById('abs').textContent = data.stats.absent;
+        document.getElementById('rate').textContent = data.stats.rate + '%';
+        document.getElementById('title').value = data.session.title || '사내 교육 출석';
+        document.getElementById('expected').value = data.session.expected_count || 0;
+        document.getElementById('list').innerHTML = data.attendees.map((a, i) => `
+          <tr>
+            <td>${i+1}</td><td>${a.team}</td><td>${a.name}</td>
+            <td>${new Date(a.attended_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}</td>
+            <td><button onclick="del(${a.id})">삭제</button></td>
+          </tr>`).join('');
+      } catch (e) {
+        showMsg('데이터를 불러오지 못했습니다');
+      }
     }
     async function qr() {
-      const res = await fetch('/api/qr');
-      const data = await res.json();
-      document.getElementById('qr').src = data.qr;
+      try {
+        const res = await fetch('/api/qr');
+        const data = await res.json();
+        document.getElementById('qr').src = data.qr;
+      } catch {}
     }
     async function start() { await act('start'); }
     async function end() { await act('end'); }
     async function save() { await act('save'); }
     async function act(action) {
-      await fetch('/api/session', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          pin: PIN,
-          action,
-          title: document.getElementById('title').value,
-          expected: document.getElementById('expected').value
-        })
-      });
-      load();
+      try {
+        const res = await fetch('/api/session', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            pin: PIN,
+            action,
+            title: document.getElementById('title').value,
+            expected: document.getElementById('expected').value
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showMsg(action === 'start' ? '출석을 시작했습니다' : action === 'end' ? '출석을 종료했습니다' : '저장했습니다');
+          load();
+        } else {
+          showMsg(data.error || '오류가 발생했습니다');
+        }
+      } catch {
+        showMsg('서버와 통신하지 못했습니다');
+      }
     }
     async function del(id) {
       if (!confirm('삭제하시겠습니까?')) return;
@@ -95,7 +117,7 @@
     }
     qr();
     load();
-    setInterval(load, 3000);
+    setInterval(load, 5000);
   </script>
 </body>
 </html>
