@@ -22,7 +22,6 @@
     th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
     th { background: #F5F0E6; }
     #msg { color: #A65D57; margin: 8px 0; min-height: 20px; }
-    .absent { color: #A65D57; }
   </style>
 </head>
 <body>
@@ -36,6 +35,7 @@
         <button onclick="save()">제목 저장</button>
         <button onclick="start()">출석 시작</button>
         <button onclick="end()" style="background:#A65D57">출석 종료</button>
+        <button onclick="exportCSV()">CSV 다운로드</button>
       </div>
       <div id="msg"></div>
     </div>
@@ -166,6 +166,10 @@
         body: JSON.stringify({ pin: PIN, empId, action })
       });
       load();
+    }
+
+    function exportCSV() {
+      window.location = `/api/export?pin=${PIN}`;
     }
 
     qr();
