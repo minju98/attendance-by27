@@ -45,7 +45,7 @@ const EXPECTED = [
   { company: "(주)이니스프리", dept: "이니스프리 BD팀", name: "우진영", empId: "NP55005381" },
   { company: "(주)아모레퍼시픽", dept: "프리시전마케팅팀", name: "허지은", empId: "AP55005651" },
   { company: "(주)아모레퍼시픽", dept: "인사팀", name: "도준", empId: "AP55005690" },
-  { company: "(주)아모레퍼시픽", dept: "인재관리팀", name: "김은희", empId: "AP55005877" }
+  { company: "(주)아모레퍼시픽", dept: "인재관리팀", name: "김윤희", empId: "AP55005877" }
 ];
 
 app.use(express.json());
