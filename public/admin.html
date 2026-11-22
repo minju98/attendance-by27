@@ -1,143 +1,214 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>출석 관리</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #FDFBF7; margin: 0; padding: 20px; }
-    .container { max-width: 1000px; margin: 0 auto; }
-    h1 { text-align: center; }
-    .qr-box { background: white; border-radius: 16px; padding: 30px; text-align: center; margin-bottom: 20px; }
-    #qr { width: 360px; height: 360px; }
-    .controls { margin: 20px 0; }
-    input, button { padding: 10px 16px; margin: 4px; border-radius: 8px; border: 1px solid #ddd; }
-    button { background: #6B5B4F; color: white; border: none; cursor: pointer; }
-    .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-    .stat { flex: 1; min-width: 120px; background: white; padding: 16px; border-radius: 12px; text-align: center; }
-    table { width: 100%; background: white; border-collapse: collapse; }
-    th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
-    th { background: #F5F0E6; }
-    #msg { color: #A65D57; margin: 10px 0; min-height: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>출석 관리</h1>
-    <div class="qr-box">
-      <img id="qr" alt="QR">
-      <p>휴대폰 카메라로 QR코드를 스캔해 주세요</p>
-      <div class="controls">
-        <input id="title" placeholder="행사 제목">
-        <input id="expected" type="number" placeholder="예정 인원" style="width:80px">
-        <button onclick="save()">저장</button>
-        <button onclick="start()">출석 시작</button>
-        <button onclick="end()" style="background:#A65D57">출석 종료</button>
-        <button onclick="exportCSV()">CSV 다운로드</button>
-      </div>
-      <div id="msg"></div>
-    </div>
-    <div class="stats">
-      <div class="stat">예정<br><strong id="exp">0</strong></div>
-      <div class="stat">출석<br><strong id="pre">0</strong></div>
-      <div class="stat">미출석<br><strong id="abs">0</strong></div>
-      <div class="stat">출석률<br><strong id="rate">0%</strong></div>
-    </div>
-    <table>
-      <thead><tr><th>#</th><th>소속 팀</th><th>이름</th><th>출석 시간</th><th></th></tr></thead>
-      <tbody id="list"></tbody>
-    </table>
-  </div>
-  <script>
-    const PIN = '2026';
-    let initialized = false;
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const QRCode = require('qrcode');
 
-    function showMsg(text) {
-      const el = document.getElementById('msg');
-      el.textContent = text;
-      setTimeout(() => el.textContent = '', 3000);
-    }
+const app = express();
+const PORT = process.env.PORT || 3000;
+const ADMIN_PIN = '2026';
+const dataFile = path.join(__dirname, 'data.json');
 
-    async function load() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        document.getElementById('exp').textContent = data.stats.expected;
-        document.getElementById('pre').textContent = data.stats.present;
-        document.getElementById('abs').textContent = data.stats.absent;
-        document.getElementById('rate').textContent = data.stats.rate + '%';
+// ===== 예상 참석자 명단 =====
+const EXPECTED = [
+  { company: "(주)아모레퍼시픽", dept: "IR팀", name: "김은빈", empId: "AP55004992" },
+  { company: "(주)아모레퍼시픽", dept: "라네즈 BPI1팀", name: "이준형", empId: "AP55004993" },
+  { company: "(주)아모레퍼시픽", dept: "글로벌 사업개발3팀", name: "서소정", empId: "AP55004997" },
+  { company: "(주)아모레퍼시픽", dept: "브랜드 크리에이티브1팀", name: "최보경", empId: "AP55005041" },
+  { company: "(주)아모레퍼시픽", dept: "브랜드 크리에이티브1팀", name: "최경은", empId: "AP55005042" },
+  { company: "(주)아모레퍼시픽", dept: "한율팀", name: "이보미", empId: "AP55005040" },
+  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "이유미", empId: "AP55005109" },
+  { company: "(주)아모레퍼시픽", dept: "글로벌 사업개발2팀", name: "민영은", empId: "AP55005111" },
+  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 글로벌커머셜1팀", name: "김해솔", empId: "AP55005110" },
+  { company: "(주)에뛰드", dept: "에뛰드 브랜드운영팀", name: "김재원", empId: "EP55005119" },
+  { company: "(주)아모레퍼시픽", dept: "DSP 3팀", name: "강다영", empId: "AP55005159" },
+  { company: "(주)아모레퍼시픽", dept: "라네즈 글로벌커머셜1팀", name: "이지선", empId: "AP55005160" },
+  { company: "(주)이니스프리", dept: "이니스프리 글로벌커머셜2팀", name: "윤지은", empId: "NP55005145" },
+  { company: "(주)아모레퍼시픽", dept: "Open Development팀", name: "박나정", empId: "AP55005210" },
+  { company: "(주)아모레퍼시픽", dept: "노사협력팀", name: "김민수", empId: "AP55005213" },
+  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "이주경", empId: "AP55005212" },
+  { company: "(주)아모레퍼시픽", dept: "라네즈 글로벌커머셜2팀", name: "이슬아", empId: "AP55005242" },
+  { company: "(주)아모레퍼시픽", dept: "설화수 BD팀", name: "김유미", empId: "AP55005241" },
+  { company: "(주)아모레퍼시픽", dept: "프리시전마케팅팀", name: "황진주", empId: "AP55005239" },
+  { company: "(주)아모레퍼시픽", dept: "헤라 BM팀", name: "박예원", empId: "AP55005240" },
+  { company: "(주)에스쁘아", dept: "에스쁘아 소셜커머스 TF", name: "이민선", empId: "SP55005231" },
+  { company: "(주)에스쁘아", dept: "에스쁘아 소셜커머스 TF", name: "김진하", empId: "SP55005232" },
+  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "손제시카", empId: "AP55005211" },
+  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 MC팀", name: "신효림", empId: "AP55005294" },
+  { company: "(주)아모레퍼시픽", dept: "라네즈 RM팀", name: "이선아", empId: "AP55005331" },
+  { company: "(주)아모레퍼시픽", dept: "리테일 MBS 영업1팀", name: "김현수", empId: "AP55005333" },
+  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 BM팀", name: "임이슬", empId: "AP55005329" },
+  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 글로벌 TF", name: "시마모리사유키", empId: "AP55005330" },
+  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 한국사업팀", name: "윤재연", empId: "AP55005332" },
+  { company: "(주)이니스프리", dept: "이니스프리 BA팀", name: "박혜림", empId: "NP55005316" },
+  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 GTM팀", name: "윤혜정", empId: "AP55005418" },
+  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 GTM팀", name: "류향은", empId: "AP55005419" },
+  { company: "(주)이니스프리", dept: "이니스프리 BD팀", name: "우진영", empId: "NP55005381" },
+  { company: "(주)아모레퍼시픽", dept: "프리시전마케팅팀", name: "허지은", empId: "AP55005651" },
+  { company: "(주)아모레퍼시픽", dept: "인사팀", name: "도준", empId: "AP55005690" },
+  { company: "(주)아모레퍼시픽", dept: "인재관리팀", name: "김은희", empId: "AP55005877" }
+];
 
-        // 처음 한 번만 입력칸을 채움 (이후에는 사용자가 수정 중일 수 있으므로 덮어쓰지 않음)
-        if (!initialized) {
-          document.getElementById('title').value = data.session.title || '사내 교육 출석';
-          document.getElementById('expected').value = data.session.expected_count || 0;
-          initialized = true;
-        }
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-        document.getElementById('list').innerHTML = data.attendees.map((a, i) => `
-          <tr>
-            <td>${i+1}</td><td>${a.team}</td><td>${a.name}</td>
-            <td>${new Date(a.attended_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}</td>
-            <td><button onclick="del(${a.id})">삭제</button></td>
-          </tr>`).join('');
-      } catch (e) {
-        showMsg('데이터를 불러오지 못했습니다');
-      }
-    }
+function readData() {
+  try {
+    return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  } catch {
+    return { attendees: [], nextId: 1, session: { title: "사내 교육 출석", is_open: false } };
+  }
+}
 
-    async function qr() {
-      try {
-        const res = await fetch('/api/qr');
-        const data = await res.json();
-        document.getElementById('qr').src = data.qr;
-      } catch {}
-    }
+function writeData(data) {
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+}
 
-    async function start() { await act('start'); }
-    async function end() { await act('end'); }
-    async function save() { await act('save'); }
+function kstTime(iso) {
+  return new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
-    async function act(action) {
-      try {
-        const res = await fetch('/api/session', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            pin: PIN,
-            action,
-            title: document.getElementById('title').value,
-            expected: document.getElementById('expected').value
-          })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showMsg(action === 'start' ? '출석을 시작했습니다' : action === 'end' ? '출석을 종료했습니다' : '저장했습니다');
-          load();
-        } else {
-          showMsg(data.error || '오류가 발생했습니다');
-        }
-      } catch {
-        showMsg('서버와 통신하지 못했습니다');
-      }
-    }
+function normalize(s) {
+  return (s || "").replace(/\s+/g, "").toLowerCase();
+}
 
-    async function del(id) {
-      if (!confirm('삭제하시겠습니까?')) return;
-      await fetch(`/api/attendance/${id}`, {
-        method: 'DELETE',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({pin: PIN})
-      });
-      load();
-    }
+// 이름만으로 매칭
+function findExpected(name) {
+  const nName = normalize(name);
+  return EXPECTED.find(e => normalize(e.name) === nName);
+}
 
-    function exportCSV() {
-      window.location = `/api/export?pin=${PIN}`;
-    }
+app.post('/api/register', (req, res) => {
+  const { team, name } = req.body;
+  if (!team?.trim() || !name?.trim()) {
+    return res.status(400).json({ error: '소속 팀과 이름을 모두 입력해 주세요.' });
+  }
+  const data = readData();
+  if (!data.session?.is_open) {
+    return res.status(403).json({ error: '현재 출석이 진행 중이 아닙니다.' });
+  }
 
-    qr();
-    load();
-    setInterval(load, 5000);
-  </script>
-</body>
-</html>
+  const expected = findExpected(name);
+  const key = expected ? expected.empId : `name:${normalize(name)}`;
+
+  const already = data.attendees.find(a => a.key === key);
+  if (already) {
+    already.duplicate_attempts = (already.duplicate_attempts || 0) + 1;
+    writeData(data);
+    return res.status(409).json({ error: '이미 출석한 분입니다.' });
+  }
+
+  const now = new Date().toISOString();
+  data.attendees.push({
+    id: data.nextId++,
+    key,
+    team: team.trim(),
+    name: name.trim(),
+    empId: expected?.empId || null,
+    company: expected?.company || null,
+    dept: expected?.dept || team.trim(),
+    attended_at: now,
+    matched: !!expected,
+    duplicate_attempts: 0
+  });
+  writeData(data);
+
+  res.json({
+    success: true,
+    time: kstTime(now),
+    matched: !!expected,
+    message: expected ? "출석이 완료되었습니다." : "출석 등록되었습니다. (명단에 없는 이름)"
+  });
+});
+
+app.get('/api/status', (req, res) => {
+  const data = readData();
+  const attendedNames = new Set(
+    data.attendees
+      .filter(a => a.matched)
+      .map(a => normalize(a.name))
+  );
+
+  const present = data.attendees.slice().reverse();
+  const absent = EXPECTED.filter(e => !attendedNames.has(normalize(e.name)));
+
+  const matchedCount = present.filter(p => p.matched).length;
+
+  res.json({
+    session: data.session || { title: "사내 교육 출석", is_open: false },
+    expectedTotal: EXPECTED.length,
+    presentCount: present.length,
+    matchedCount,
+    absentCount: absent.length,
+    present,
+    absent,
+    rate: EXPECTED.length ? Math.round((matchedCount / EXPECTED.length) * 100) : 0
+  });
+});
+
+app.post('/api/session', (req, res) => {
+  const { pin, action, title } = req.body;
+  if (pin !== ADMIN_PIN) return res.status(401).json({ error: 'PIN이 올바르지 않습니다.' });
+  const data = readData();
+  if (!data.session) data.session = {};
+  if (action === 'start') {
+    data.session.is_open = true;
+    data.session.title = title || data.session.title || "사내 교육 출석";
+    data.session.started_at = new Date().toISOString();
+  } else if (action === 'end') {
+    data.session.is_open = false;
+    data.session.ended_at = new Date().toISOString();
+  } else if (action === 'save') {
+    data.session.title = title;
+  }
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.post('/api/manual', (req, res) => {
+  const { pin, empId, action } = req.body;
+  if (pin !== ADMIN_PIN) return res.status(401).json({ error: '권한 없음' });
+  const data = readData();
+  const person = EXPECTED.find(e => e.empId === empId);
+  if (!person) return res.status(404).json({ error: '명단에 없습니다' });
+
+  if (action === 'checkin') {
+    if (data.attendees.some(a => a.key === empId)) return res.json({ success: true });
+    data.attendees.push({
+      id: data.nextId++,
+      key: empId,
+      team: person.dept,
+      name: person.name,
+      empId: person.empId,
+      company: person.company,
+      dept: person.dept,
+      attended_at: new Date().toISOString(),
+      matched: true,
+      manual: true,
+      duplicate_attempts: 0
+    });
+  } else if (action === 'cancel') {
+    data.attendees = data.attendees.filter(a => a.key !== empId && normalize(a.name) !== normalize(person.name));
+  }
+  writeData(data);
+  res.json({ success: true });
+});
+
+app.get('/api/qr', async (req, res) => {
+  const host = req.get('host');
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const url = `${proto}://${host}/attend`;
+  try {
+    const qr = await QRCode.toDataURL(url, { width: 600, margin: 2 });
+    res.json({ url, qr });
+  } catch {
+    res.status(500).json({ error: 'QR 생성 실패' });
+  }
+});
+
+app.get('/', (req, res) => res.redirect('/admin'));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/attend', (req, res) => res.sendFile(path.join(__dirname, 'public', 'attend.html')));
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`서버 실행: 포트 ${PORT}`);
+});
