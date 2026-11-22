@@ -1,214 +1,176 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const QRCode = require('qrcode');
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>출석 관리</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #FDFBF7; margin: 0; padding: 20px; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1, h2 { text-align: center; }
+    .qr-box { background: white; border-radius: 16px; padding: 30px; text-align: center; margin-bottom: 20px; }
+    #qr { width: 340px; height: 340px; }
+    .controls { margin: 16px 0; }
+    input, button { padding: 10px 14px; margin: 4px; border-radius: 8px; border: 1px solid #ddd; }
+    button { background: #6B5B4F; color: white; border: none; cursor: pointer; }
+    .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 140px; background: white; padding: 16px; border-radius: 12px; text-align: center; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
+    .tabs button { background: #eee; color: #333; }
+    .tabs button.active { background: #6B5B4F; color: white; }
+    table { width: 100%; background: white; border-collapse: collapse; margin-bottom: 30px; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
+    th { background: #F5F0E6; }
+    #msg { color: #A65D57; margin: 8px 0; min-height: 20px; }
+    .absent { color: #A65D57; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>출석 관리</h1>
+    <div class="qr-box">
+      <img id="qr" alt="QR">
+      <p>휴대폰 카메라로 QR코드를 스캔해 주세요</p>
+      <div class="controls">
+        <input id="title" placeholder="행사 제목" style="width:220px">
+        <button onclick="save()">제목 저장</button>
+        <button onclick="start()">출석 시작</button>
+        <button onclick="end()" style="background:#A65D57">출석 종료</button>
+      </div>
+      <div id="msg"></div>
+    </div>
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const ADMIN_PIN = '2026';
-const dataFile = path.join(__dirname, 'data.json');
+    <div class="stats">
+      <div class="stat">예상 인원<br><strong id="exp">0</strong></div>
+      <div class="stat">출석 완료<br><strong id="matched">0</strong></div>
+      <div class="stat">미출석<br><strong id="abs">0</strong></div>
+      <div class="stat">출석률<br><strong id="rate">0%</strong></div>
+    </div>
 
-// ===== 예상 참석자 명단 =====
-const EXPECTED = [
-  { company: "(주)아모레퍼시픽", dept: "IR팀", name: "김은빈", empId: "AP55004992" },
-  { company: "(주)아모레퍼시픽", dept: "라네즈 BPI1팀", name: "이준형", empId: "AP55004993" },
-  { company: "(주)아모레퍼시픽", dept: "글로벌 사업개발3팀", name: "서소정", empId: "AP55004997" },
-  { company: "(주)아모레퍼시픽", dept: "브랜드 크리에이티브1팀", name: "최보경", empId: "AP55005041" },
-  { company: "(주)아모레퍼시픽", dept: "브랜드 크리에이티브1팀", name: "최경은", empId: "AP55005042" },
-  { company: "(주)아모레퍼시픽", dept: "한율팀", name: "이보미", empId: "AP55005040" },
-  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "이유미", empId: "AP55005109" },
-  { company: "(주)아모레퍼시픽", dept: "글로벌 사업개발2팀", name: "민영은", empId: "AP55005111" },
-  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 글로벌커머셜1팀", name: "김해솔", empId: "AP55005110" },
-  { company: "(주)에뛰드", dept: "에뛰드 브랜드운영팀", name: "김재원", empId: "EP55005119" },
-  { company: "(주)아모레퍼시픽", dept: "DSP 3팀", name: "강다영", empId: "AP55005159" },
-  { company: "(주)아모레퍼시픽", dept: "라네즈 글로벌커머셜1팀", name: "이지선", empId: "AP55005160" },
-  { company: "(주)이니스프리", dept: "이니스프리 글로벌커머셜2팀", name: "윤지은", empId: "NP55005145" },
-  { company: "(주)아모레퍼시픽", dept: "Open Development팀", name: "박나정", empId: "AP55005210" },
-  { company: "(주)아모레퍼시픽", dept: "노사협력팀", name: "김민수", empId: "AP55005213" },
-  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "이주경", empId: "AP55005212" },
-  { company: "(주)아모레퍼시픽", dept: "라네즈 글로벌커머셜2팀", name: "이슬아", empId: "AP55005242" },
-  { company: "(주)아모레퍼시픽", dept: "설화수 BD팀", name: "김유미", empId: "AP55005241" },
-  { company: "(주)아모레퍼시픽", dept: "프리시전마케팅팀", name: "황진주", empId: "AP55005239" },
-  { company: "(주)아모레퍼시픽", dept: "헤라 BM팀", name: "박예원", empId: "AP55005240" },
-  { company: "(주)에스쁘아", dept: "에스쁘아 소셜커머스 TF", name: "이민선", empId: "SP55005231" },
-  { company: "(주)에스쁘아", dept: "에스쁘아 소셜커머스 TF", name: "김진하", empId: "SP55005232" },
-  { company: "(주)아모레퍼시픽", dept: "더마뷰티 MC팀", name: "손제시카", empId: "AP55005211" },
-  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 MC팀", name: "신효림", empId: "AP55005294" },
-  { company: "(주)아모레퍼시픽", dept: "라네즈 RM팀", name: "이선아", empId: "AP55005331" },
-  { company: "(주)아모레퍼시픽", dept: "리테일 MBS 영업1팀", name: "김현수", empId: "AP55005333" },
-  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 BM팀", name: "임이슬", empId: "AP55005329" },
-  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 글로벌 TF", name: "시마모리사유키", empId: "AP55005330" },
-  { company: "(주)아모레퍼시픽", dept: "헤어앤뷰티 한국사업팀", name: "윤재연", empId: "AP55005332" },
-  { company: "(주)이니스프리", dept: "이니스프리 BA팀", name: "박혜림", empId: "NP55005316" },
-  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 GTM팀", name: "윤혜정", empId: "AP55005418" },
-  { company: "(주)아모레퍼시픽", dept: "바이탈뷰티 GTM팀", name: "류향은", empId: "AP55005419" },
-  { company: "(주)이니스프리", dept: "이니스프리 BD팀", name: "우진영", empId: "NP55005381" },
-  { company: "(주)아모레퍼시픽", dept: "프리시전마케팅팀", name: "허지은", empId: "AP55005651" },
-  { company: "(주)아모레퍼시픽", dept: "인사팀", name: "도준", empId: "AP55005690" },
-  { company: "(주)아모레퍼시픽", dept: "인재관리팀", name: "김은희", empId: "AP55005877" }
-];
+    <div class="tabs">
+      <button id="tab-present" class="active" onclick="showTab('present')">출석자</button>
+      <button id="tab-absent" onclick="showTab('absent')">미출석자 명단</button>
+    </div>
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+    <div id="present-section">
+      <h2>출석자 목록</h2>
+      <table>
+        <thead><tr><th>#</th><th>이름</th><th>입력한 팀</th><th>명단 부서</th><th>시간</th><th>매칭</th></tr></thead>
+        <tbody id="present-list"></tbody>
+      </table>
+    </div>
 
-function readData() {
-  try {
-    return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-  } catch {
-    return { attendees: [], nextId: 1, session: { title: "사내 교육 출석", is_open: false } };
-  }
-}
+    <div id="absent-section" style="display:none">
+      <h2>아직 출석하지 않은 사람</h2>
+      <table>
+        <thead><tr><th>회사</th><th>소속부서</th><th>성명</th><th>사번</th><th></th></tr></thead>
+        <tbody id="absent-list"></tbody>
+      </table>
+    </div>
+  </div>
 
-function writeData(data) {
-  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
-}
+  <script>
+    const PIN = '2026';
+    let initialized = false;
 
-function kstTime(iso) {
-  return new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false });
-}
+    function showMsg(text) {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      setTimeout(() => el.textContent = '', 3000);
+    }
 
-function normalize(s) {
-  return (s || "").replace(/\s+/g, "").toLowerCase();
-}
+    function showTab(tab) {
+      document.getElementById('present-section').style.display = tab === 'present' ? 'block' : 'none';
+      document.getElementById('absent-section').style.display = tab === 'absent' ? 'block' : 'none';
+      document.getElementById('tab-present').classList.toggle('active', tab === 'present');
+      document.getElementById('tab-absent').classList.toggle('active', tab === 'absent');
+    }
 
-// 이름만으로 매칭
-function findExpected(name) {
-  const nName = normalize(name);
-  return EXPECTED.find(e => normalize(e.name) === nName);
-}
+    async function load() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('exp').textContent = data.expectedTotal;
+        document.getElementById('matched').textContent = data.matchedCount;
+        document.getElementById('abs').textContent = data.absentCount;
+        document.getElementById('rate').textContent = data.rate + '%';
 
-app.post('/api/register', (req, res) => {
-  const { team, name } = req.body;
-  if (!team?.trim() || !name?.trim()) {
-    return res.status(400).json({ error: '소속 팀과 이름을 모두 입력해 주세요.' });
-  }
-  const data = readData();
-  if (!data.session?.is_open) {
-    return res.status(403).json({ error: '현재 출석이 진행 중이 아닙니다.' });
-  }
+        if (!initialized) {
+          document.getElementById('title').value = data.session.title || '사내 교육 출석';
+          initialized = true;
+        }
 
-  const expected = findExpected(name);
-  const key = expected ? expected.empId : `name:${normalize(name)}`;
+        document.getElementById('present-list').innerHTML = data.present.map((a, i) => `
+          <tr>
+            <td>${i+1}</td>
+            <td>${a.name}</td>
+            <td>${a.team}</td>
+            <td>${a.dept || '-'}</td>
+            <td>${new Date(a.attended_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}</td>
+            <td>${a.matched ? '✓' : '명단없음'}</td>
+          </tr>`).join('');
 
-  const already = data.attendees.find(a => a.key === key);
-  if (already) {
-    already.duplicate_attempts = (already.duplicate_attempts || 0) + 1;
-    writeData(data);
-    return res.status(409).json({ error: '이미 출석한 분입니다.' });
-  }
+        document.getElementById('absent-list').innerHTML = data.absent.map(e => `
+          <tr>
+            <td>${e.company}</td>
+            <td>${e.dept}</td>
+            <td>${e.name}</td>
+            <td>${e.empId}</td>
+            <td><button onclick="manual('${e.empId}','checkin')">수동 출석</button></td>
+          </tr>`).join('');
+      } catch (e) {
+        showMsg('데이터를 불러오지 못했습니다');
+      }
+    }
 
-  const now = new Date().toISOString();
-  data.attendees.push({
-    id: data.nextId++,
-    key,
-    team: team.trim(),
-    name: name.trim(),
-    empId: expected?.empId || null,
-    company: expected?.company || null,
-    dept: expected?.dept || team.trim(),
-    attended_at: now,
-    matched: !!expected,
-    duplicate_attempts: 0
-  });
-  writeData(data);
+    async function qr() {
+      try {
+        const res = await fetch('/api/qr');
+        const data = await res.json();
+        document.getElementById('qr').src = data.qr;
+      } catch {}
+    }
 
-  res.json({
-    success: true,
-    time: kstTime(now),
-    matched: !!expected,
-    message: expected ? "출석이 완료되었습니다." : "출석 등록되었습니다. (명단에 없는 이름)"
-  });
-});
+    async function start() { await act('start'); }
+    async function end() { await act('end'); }
+    async function save() { await act('save'); }
 
-app.get('/api/status', (req, res) => {
-  const data = readData();
-  const attendedNames = new Set(
-    data.attendees
-      .filter(a => a.matched)
-      .map(a => normalize(a.name))
-  );
+    async function act(action) {
+      try {
+        const res = await fetch('/api/session', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            pin: PIN,
+            action,
+            title: document.getElementById('title').value
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showMsg(action === 'start' ? '출석을 시작했습니다' : action === 'end' ? '출석을 종료했습니다' : '저장했습니다');
+          load();
+        } else {
+          showMsg(data.error || '오류가 발생했습니다');
+        }
+      } catch {
+        showMsg('서버와 통신하지 못했습니다');
+      }
+    }
 
-  const present = data.attendees.slice().reverse();
-  const absent = EXPECTED.filter(e => !attendedNames.has(normalize(e.name)));
+    async function manual(empId, action) {
+      if (action === 'checkin' && !confirm('이 사람을 수동으로 출석 처리하시겠습니까?')) return;
+      await fetch('/api/manual', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pin: PIN, empId, action })
+      });
+      load();
+    }
 
-  const matchedCount = present.filter(p => p.matched).length;
-
-  res.json({
-    session: data.session || { title: "사내 교육 출석", is_open: false },
-    expectedTotal: EXPECTED.length,
-    presentCount: present.length,
-    matchedCount,
-    absentCount: absent.length,
-    present,
-    absent,
-    rate: EXPECTED.length ? Math.round((matchedCount / EXPECTED.length) * 100) : 0
-  });
-});
-
-app.post('/api/session', (req, res) => {
-  const { pin, action, title } = req.body;
-  if (pin !== ADMIN_PIN) return res.status(401).json({ error: 'PIN이 올바르지 않습니다.' });
-  const data = readData();
-  if (!data.session) data.session = {};
-  if (action === 'start') {
-    data.session.is_open = true;
-    data.session.title = title || data.session.title || "사내 교육 출석";
-    data.session.started_at = new Date().toISOString();
-  } else if (action === 'end') {
-    data.session.is_open = false;
-    data.session.ended_at = new Date().toISOString();
-  } else if (action === 'save') {
-    data.session.title = title;
-  }
-  writeData(data);
-  res.json({ success: true });
-});
-
-app.post('/api/manual', (req, res) => {
-  const { pin, empId, action } = req.body;
-  if (pin !== ADMIN_PIN) return res.status(401).json({ error: '권한 없음' });
-  const data = readData();
-  const person = EXPECTED.find(e => e.empId === empId);
-  if (!person) return res.status(404).json({ error: '명단에 없습니다' });
-
-  if (action === 'checkin') {
-    if (data.attendees.some(a => a.key === empId)) return res.json({ success: true });
-    data.attendees.push({
-      id: data.nextId++,
-      key: empId,
-      team: person.dept,
-      name: person.name,
-      empId: person.empId,
-      company: person.company,
-      dept: person.dept,
-      attended_at: new Date().toISOString(),
-      matched: true,
-      manual: true,
-      duplicate_attempts: 0
-    });
-  } else if (action === 'cancel') {
-    data.attendees = data.attendees.filter(a => a.key !== empId && normalize(a.name) !== normalize(person.name));
-  }
-  writeData(data);
-  res.json({ success: true });
-});
-
-app.get('/api/qr', async (req, res) => {
-  const host = req.get('host');
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const url = `${proto}://${host}/attend`;
-  try {
-    const qr = await QRCode.toDataURL(url, { width: 600, margin: 2 });
-    res.json({ url, qr });
-  } catch {
-    res.status(500).json({ error: 'QR 생성 실패' });
-  }
-});
-
-app.get('/', (req, res) => res.redirect('/admin'));
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-app.get('/attend', (req, res) => res.sendFile(path.join(__dirname, 'public', 'attend.html')));
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`서버 실행: 포트 ${PORT}`);
-});
+    qr();
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>
