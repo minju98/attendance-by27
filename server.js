@@ -71,7 +71,6 @@ function normalize(s) {
   return (s || "").replace(/\s+/g, "").toLowerCase();
 }
 
-// 이름만으로 매칭
 function findExpected(name) {
   const nName = normalize(name);
   return EXPECTED.find(e => normalize(e.name) === nName);
@@ -191,6 +190,19 @@ app.post('/api/manual', (req, res) => {
   }
   writeData(data);
   res.json({ success: true });
+});
+
+app.get('/api/export', (req, res) => {
+  const pin = req.query.pin;
+  if (pin !== ADMIN_PIN) return res.status(401).send('권한 없음');
+  const data = readData();
+  let csv = '이름,입력한 팀,명단 부서,사번,출석 시간,매칭여부\n';
+  data.attendees.forEach(a => {
+    csv += `"${a.name}","${a.team}","${a.dept || ''}","${a.empId || ''}","${kstTime(a.attended_at)}","${a.matched ? 'Y' : 'N'}"\n`;
+  });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="attendance.csv"');
+  res.send('\uFEFF' + csv);
 });
 
 app.get('/api/qr', async (req, res) => {
